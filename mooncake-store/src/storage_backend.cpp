@@ -1866,6 +1866,7 @@ BucketStorageBackend::BuildBucket(
 tl::expected<void, ErrorCode> BucketStorageBackend::WriteBucket(
     int64_t bucket_id, std::shared_ptr<BucketMetadata> bucket_metadata,
     std::vector<iovec>& iovs) {
+    nvtx3::scoped_range range{"BucketStorageBackend::WriteBucket"};
     namespace fs = std::filesystem;
     auto bucket_data_path_res = GetBucketDataPath(bucket_id);
     if (!bucket_data_path_res) {

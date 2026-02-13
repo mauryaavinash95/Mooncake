@@ -14,6 +14,8 @@
 #include <optional>
 #include <vector>
 
+#include <nvtx3/nvtx3.hpp>
+
 #include "real_client.h"
 #include "client_buffer.hpp"
 #include "config.h"
@@ -1390,6 +1392,7 @@ std::string RealClient::get_hostname() const { return local_hostname; }
 std::vector<int> RealClient::batch_put_from(
     const std::vector<std::string> &keys, const std::vector<void *> &buffers,
     const std::vector<size_t> &sizes, const ReplicateConfig &config) {
+    nvtx3::scoped_range range{"RealClient::batch_put_from"};
     auto internal_results =
         batch_put_from_internal(keys, buffers, sizes, config);
     std::vector<int> results;
@@ -1458,6 +1461,7 @@ RealClient::batch_put_from_dummy_helper(
 std::vector<tl::expected<void, ErrorCode>> RealClient::batch_put_from_internal(
     const std::vector<std::string> &keys, const std::vector<void *> &buffers,
     const std::vector<size_t> &sizes, const ReplicateConfig &config) {
+    nvtx3::scoped_range range{"RealClient::batch_put_from_internal"};
     if (config.prefer_alloc_in_same_node) {
         LOG(ERROR) << "prefer_alloc_in_same_node is not supported.";
         return std::vector<tl::expected<void, ErrorCode>>(

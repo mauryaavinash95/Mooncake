@@ -15,6 +15,8 @@
 #include <set>
 #include <ylt/struct_json/json_reader.h>
 
+#include <nvtx3/nvtx3.hpp>
+
 #include "transfer_engine.h"
 #include "transfer_task.h"
 #include "transport/transport.h"
@@ -1160,6 +1162,7 @@ std::vector<PutOperation> Client::CreatePutOperations(
 
 void Client::StartBatchPut(std::vector<PutOperation>& ops,
                            const ReplicateConfig& config) {
+    nvtx3::scoped_range range{"Client::StartBatchPut"};
     std::vector<std::string> keys;
     std::vector<std::vector<uint64_t>> slice_lengths;
 
@@ -1207,6 +1210,7 @@ void Client::StartBatchPut(std::vector<PutOperation>& ops,
 }
 
 void Client::SubmitTransfers(std::vector<PutOperation>& ops) {
+    nvtx3::scoped_range range{"Client::SubmitTransfers"};
     if (!transfer_submitter_) {
         LOG(ERROR) << "TransferSubmitter not initialized";
         for (auto& op : ops) {
@@ -1278,6 +1282,7 @@ void Client::SubmitTransfers(std::vector<PutOperation>& ops) {
 }
 
 void Client::WaitForTransfers(std::vector<PutOperation>& ops) {
+    nvtx3::scoped_range range{"Client::WaitForTransfers"};
     for (auto& op : ops) {
         // Skip operations that already failed or completed
         if (op.IsResolved()) {
@@ -1324,6 +1329,7 @@ void Client::WaitForTransfers(std::vector<PutOperation>& ops) {
 }
 
 void Client::FinalizeBatchPut(std::vector<PutOperation>& ops) {
+    nvtx3::scoped_range range{"Client::FinalizeBatchPut"};
     // For each operation,
     // If transfers completed successfully, we need to call BatchPutEnd
     // If the operation failed but has allocated replicas, we need to call
@@ -1568,6 +1574,7 @@ std::vector<tl::expected<void, ErrorCode>> Client::BatchPut(
     const std::vector<ObjectKey>& keys,
     std::vector<std::vector<Slice>>& batched_slices,
     const ReplicateConfig& config) {
+    nvtx3::scoped_range range{"Client::BatchPut"};
     ReplicateConfig client_cfg = config;
     if (protocol_ == "cxl") {
         client_cfg.preferred_segment = local_hostname_;

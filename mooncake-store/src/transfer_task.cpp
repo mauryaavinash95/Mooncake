@@ -294,6 +294,7 @@ void TransferEngineOperationState::set_result_internal(ErrorCode error_code) {
 }
 
 void TransferEngineOperationState::wait_for_completion() {
+    nvtx3::scoped_range range{"TransferEngineOperationState::wait_for_completion"};
     if (is_completed()) {
         return;
     }
