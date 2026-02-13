@@ -37,6 +37,8 @@ struct IOUringTask {
     volatile TransferStatusEnum status_word;
     volatile size_t transferred_bytes;
     void *buffer = nullptr;
+    size_t bytes_completed = 0;  // cumulative bytes across short-write retries
+    int fd = -1;                 // cached fd for resubmission
 
     ~IOUringTask() {
         if (buffer) free(buffer);

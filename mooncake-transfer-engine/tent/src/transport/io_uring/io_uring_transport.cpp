@@ -34,18 +34,12 @@ class IOUringFileContext {
    public:
     explicit IOUringFileContext(const std::string& path) : ready_(false) {
         fd_ = open(path.c_str(), O_RDWR | O_DIRECT);
-        if (fd_ >= 0) {
-            ready_ = true;
-            return;
-        }
-
-        fd_ = open(path.c_str(), O_RDWR);
         if (fd_ < 0) {
-            PLOG(ERROR) << "Failed to open file " << path;
+            PLOG(ERROR) << "O_DIRECT open failed for " << path
+                        << " (O_DIRECT is required, no buffered fallback)";
             return;
         }
-
-        LOG(WARNING) << "File " << path << " opened in Buffered I/O mode";
+        LOG(INFO) << "File " << path << " opened with O_DIRECT";
         ready_ = true;
     }
 
@@ -183,6 +177,9 @@ Status IOUringTransport::submitTransferTasks(
         if (!context || !context->ready())
             return Status::InvalidArgument("Invalid remote segment" LOC_MARK);
 
+        task.fd = context->getHandle();
+        task.bytes_completed = 0;
+
         struct io_uring_sqe* sqe = io_uring_get_sqe(&io_uring_batch->ring);
         if (!sqe)
             return Status::InternalError("io_uring_get_sqe failed" LOC_MARK);
@@ -223,7 +220,7 @@ Status IOUringTransport::submitTransferTasks(
 }
 
 Status IOUringTransport::getTransferStatus(SubBatchRef batch, int task_id,
-                                           TransferStatus& status) {
+                                            TransferStatus& status) {
     auto io_uring_batch = dynamic_cast<IOUringSubBatch*>(batch);
     if (task_id < 0 || task_id >= (int)io_uring_batch->task_list.size())
         return Status::InvalidArgument("Invalid task ID");
@@ -240,23 +237,102 @@ Status IOUringTransport::getTransferStatus(SubBatchRef batch, int task_id,
         auto task = (IOUringTask*)cqe->user_data;
         if (task) {
             if (cqe->res < 0) {
-                LOG(INFO) << "Received an event with error code " << cqe->res;
+                LOG(ERROR) << "io_uring I/O error: " << cqe->res
+                           << " (" << strerror(-cqe->res) << ")"
+                           << " op=" << (task->request.opcode == Request::WRITE
+                                             ? "WRITE"
+                                             : "READ")
+                           << " offset=" << task->request.target_offset
+                           << " len=" << task->request.length
+                           << " completed_so_far=" << task->bytes_completed;
                 task->status_word = TransferStatusEnum::FAILED;
-            } else {
+                // Clean up bounce buffer on failure
                 if (task->buffer) {
-                    if (task->request.opcode == Request::READ)
-                        Platform::getLoader().copy(task->request.source,
-                                                   task->buffer,
-                                                   task->request.length);
-
                     free(task->buffer);
                     task->buffer = nullptr;
                 }
-                task->status_word = TransferStatusEnum::COMPLETED;
-                task->transferred_bytes = task->request.length;
+            } else if (cqe->res == 0 &&
+                       task->bytes_completed < task->request.length) {
+                // Zero-length completion with outstanding bytes is an error
+                // (e.g. writing past EOF without O_APPEND)
+                LOG(ERROR) << "io_uring short I/O: 0 bytes returned with "
+                           << (task->request.length - task->bytes_completed)
+                           << " bytes remaining";
+                task->status_word = TransferStatusEnum::FAILED;
+                if (task->buffer) {
+                    free(task->buffer);
+                    task->buffer = nullptr;
+                }
+            } else {
+                task->bytes_completed += (size_t)cqe->res;
+                size_t remaining =
+                    task->request.length - task->bytes_completed;
+
+                if (remaining > 0) {
+                    // Short write/read: resubmit for the remaining bytes
+                    LOG(WARNING)
+                        << "io_uring short I/O: got " << cqe->res
+                        << " bytes, " << remaining << " remaining"
+                        << " (total " << task->bytes_completed << "/"
+                        << task->request.length << ")";
+
+                    struct io_uring_sqe* sqe =
+                        io_uring_get_sqe(&io_uring_batch->ring);
+                    if (!sqe) {
+                        LOG(ERROR) << "io_uring_get_sqe failed during "
+                                      "short-write resubmission";
+                        task->status_word = TransferStatusEnum::FAILED;
+                    } else {
+                        uint64_t new_offset = task->request.target_offset +
+                                              task->bytes_completed;
+                        // Determine the I/O buffer pointer for the remainder.
+                        // If using a bounce buffer, advance into it;
+                        // otherwise advance the source pointer.
+                        void* io_buf;
+                        if (task->buffer)
+                            io_buf = (char*)task->buffer +
+                                     task->bytes_completed;
+                        else
+                            io_buf = (char*)task->request.source +
+                                     task->bytes_completed;
+
+                        if (task->request.opcode == Request::WRITE)
+                            io_uring_prep_write(sqe, task->fd, io_buf,
+                                                remaining, new_offset);
+                        else
+                            io_uring_prep_read(sqe, task->fd, io_buf,
+                                               remaining, new_offset);
+
+                        sqe->user_data = (uintptr_t)task;
+                        int rc = io_uring_submit(&io_uring_batch->ring);
+                        if (rc < 1) {
+                            LOG(ERROR)
+                                << "io_uring_submit failed during "
+                                   "short-write resubmission: "
+                                << strerror(-rc);
+                            task->status_word = TransferStatusEnum::FAILED;
+                        }
+                        // else: stays PENDING, will be polled again
+                    }
+                } else {
+                    // All bytes transferred successfully
+                    if (task->buffer) {
+                        if (task->request.opcode == Request::READ)
+                            Platform::getLoader().copy(
+                                task->request.source, task->buffer,
+                                task->request.length);
+                        free(task->buffer);
+                        task->buffer = nullptr;
+                    }
+                    task->status_word = TransferStatusEnum::COMPLETED;
+                    task->transferred_bytes = task->request.length;
+                }
             }
         }
         io_uring_cqe_seen(&io_uring_batch->ring, cqe);
+        if (task)
+            status = TransferStatus{task->status_word,
+                                    task->transferred_bytes};
     }
     return Status::OK();
 }
