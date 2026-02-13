@@ -33,13 +33,23 @@ namespace tent {
 class IOUringFileContext {
    public:
     explicit IOUringFileContext(const std::string& path) : ready_(false) {
-        fd_ = open(path.c_str(), O_RDWR | O_DIRECT);
+        int flags = O_RDWR | O_DIRECT;
+        // MC_IOURING_SYNC=1 adds O_SYNC for durable writes (each write is
+        // persisted before CQE completion).  Matches the guarantees of the
+        // reference microbenchmark (write-only-thru.cpp).
+        const char* sync_env = getenv("MC_IOURING_SYNC");
+        if (sync_env && std::string(sync_env) == "1") {
+            flags |= O_SYNC;
+            LOG(INFO) << "O_SYNC enabled via MC_IOURING_SYNC=1";
+        }
+        fd_ = open(path.c_str(), flags);
         if (fd_ < 0) {
             PLOG(ERROR) << "O_DIRECT open failed for " << path
                         << " (O_DIRECT is required, no buffered fallback)";
             return;
         }
-        LOG(INFO) << "File " << path << " opened with O_DIRECT";
+        LOG(INFO) << "File " << path << " opened with O_DIRECT"
+                  << ((flags & O_SYNC) ? " | O_SYNC" : "");
         ready_ = true;
     }
 
