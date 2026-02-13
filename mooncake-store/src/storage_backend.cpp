@@ -15,6 +15,7 @@
 #include <chrono>
 #include <unordered_set>
 
+#include <nvtx3/nvtx3.hpp>
 #include <ylt/struct_pb.hpp>
 
 #include "mutex.h"
@@ -271,6 +272,7 @@ bool StorageBackend::InitQuotaEvict() {
 
 tl::expected<void, ErrorCode> StorageBackend::StoreObject(
     const std::string& path, const std::vector<Slice>& slices) {
+    nvtx3::scoped_range range{"StorageBackend::StoreObject(slices)"};
     size_t total_size = 0;
     for (const auto& slice : slices) {
         total_size += slice.size;
@@ -361,6 +363,7 @@ tl::expected<void, ErrorCode> StorageBackend::StoreObject(
 
 tl::expected<void, ErrorCode> StorageBackend::LoadObject(
     const std::string& path, std::vector<Slice>& slices, int64_t length) {
+    nvtx3::scoped_range range{"StorageBackend::LoadObject(slices)"};
     ResolvePath(path);
     auto file = create_file(path, FileMode::Read);
     if (!file) {
@@ -677,6 +680,7 @@ StorageBackend::CreateFileForWriting(const std::string& path,
 tl::expected<size_t, ErrorCode> StorageBackend::WriteSlicesToFile(
     std::unique_ptr<StorageFile>& file, const std::string& path,
     const std::vector<Slice>& slices, uint64_t reserved_size) {
+    nvtx3::scoped_range range{"StorageBackend::WriteSlicesToFile"};
     std::vector<iovec> iovs;
     iovs.reserve(slices.size());
     size_t slices_total_size = 0;
@@ -792,6 +796,7 @@ bool StorageBackend::CheckDiskSpace(size_t required_size) {
 }
 
 std::string StorageBackend::EvictFile() {
+    nvtx3::scoped_range range{"StorageBackend::EvictFile"};
     // Eviction is only enabled for local storage
     if (!IsEvictionEnabled()) {
         LOG(WARNING)
@@ -866,6 +871,7 @@ FileRecord StorageBackend::SelectFileToEvictByFIFO() {
 
 tl::expected<void, ErrorCode> StorageBackend::EnsureDiskSpace(
     size_t required_size) {
+    nvtx3::scoped_range range{"StorageBackend::EnsureDiskSpace"};
     // If eviction is disabled (3FS mode), skip space checking and eviction
     // Let 3FS filesystem handle space management itself
     if (!IsEvictionEnabled()) {
@@ -999,6 +1005,7 @@ tl::expected<int64_t, ErrorCode> StorageBackendAdaptor::BatchOffload(
     std::function<ErrorCode(const std::vector<std::string>& keys,
                             std::vector<StorageObjectMetadata>& metadatas)>
         complete_handler) {
+    nvtx3::scoped_range range{"StorageBackendAdaptor::BatchOffload"};
     if (batch_object.empty()) {
         LOG(ERROR) << "batch object is empty";
         return tl::make_unexpected(ErrorCode::INVALID_KEY);
@@ -1238,6 +1245,7 @@ tl::expected<int64_t, ErrorCode> BucketStorageBackend::BatchOffload(
     std::function<ErrorCode(const std::vector<std::string>& keys,
                             std::vector<StorageObjectMetadata>& metadatas)>
         complete_handler) {
+    nvtx3::scoped_range range{"BucketStorageBackend::BatchOffload"};
     if (!initialized_.load(std::memory_order_acquire)) {
         LOG(ERROR)
             << "Storage backend is not initialized. Call Init() before use.";
@@ -2294,6 +2302,7 @@ tl::expected<int64_t, ErrorCode> OffsetAllocatorStorageBackend::BatchOffload(
     std::function<ErrorCode(const std::vector<std::string>& keys,
                             std::vector<StorageObjectMetadata>& metadatas)>
         complete_handler) {
+    nvtx3::scoped_range range{"OffsetAllocatorStorageBackend::BatchOffload"};
     if (!initialized_.load(std::memory_order_acquire)) {
         LOG(ERROR)
             << "Storage backend is not initialized. Call Init() before use.";

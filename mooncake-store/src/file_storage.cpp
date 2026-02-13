@@ -3,6 +3,8 @@
 #include <memory>
 #include <vector>
 
+#include <nvtx3/nvtx3.hpp>
+
 #include "storage_backend.h"
 #include "utils.h"
 namespace mooncake {
@@ -239,6 +241,7 @@ tl::expected<void, ErrorCode> FileStorage::Init() {
 
 tl::expected<std::vector<uint64_t>, ErrorCode> FileStorage::BatchGet(
     const std::vector<std::string>& keys, const std::vector<int64_t>& sizes) {
+    nvtx3::scoped_range range{"FileStorage::BatchGet"};
     auto start_time = std::chrono::steady_clock::now();
     auto allocate_res = AllocateBatch(keys, sizes);
     if (!allocate_res) {
@@ -264,6 +267,7 @@ tl::expected<std::vector<uint64_t>, ErrorCode> FileStorage::BatchGet(
 
 tl::expected<void, ErrorCode> FileStorage::OffloadObjects(
     const std::unordered_map<std::string, int64_t>& offloading_objects) {
+    nvtx3::scoped_range range{"FileStorage::OffloadObjects"};
     std::vector<std::vector<std::string>> buckets_keys;
     if (auto bucket_backend =
             std::dynamic_pointer_cast<BucketStorageBackend>(storage_backend_)) {
@@ -340,6 +344,7 @@ tl::expected<bool, ErrorCode> FileStorage::IsEnableOffloading() {
 }
 
 tl::expected<void, ErrorCode> FileStorage::Heartbeat() {
+    nvtx3::scoped_range range{"FileStorage::Heartbeat"};
     if (client_ == nullptr) {
         LOG(ERROR) << "client is nullptr";
         return tl::make_unexpected(ErrorCode::INVALID_PARAMS);

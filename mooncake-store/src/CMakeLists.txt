@@ -42,6 +42,9 @@ if(USE_3FS)
   set(EXTRA_LIBS ${HF3FS_API_LIB})
 endif()
 
+# Find CUDA toolkit for NVTX3 profiling support
+find_package(CUDAToolkit QUIET)
+
 # The cache_allocator library
 include_directories(${Python3_INCLUDE_DIRS})
 add_library(mooncake_store ${MOONCAKE_STORE_SOURCES})
@@ -59,6 +62,14 @@ target_link_libraries(mooncake_store
     PRIVATE
         transfer_engine
 )
+
+# Link NVTX3 for profiling annotations
+if(CUDAToolkit_FOUND AND TARGET CUDA::nvtx3)
+    target_link_libraries(mooncake_store PUBLIC CUDA::nvtx3)
+    message(STATUS "NVTX3 profiling support enabled for mooncake_store")
+else()
+    message(WARNING "NVTX3 not found - profiling annotations will not be available")
+endif()
 if (STORE_USE_ETCD)
     add_dependencies(mooncake_store build_etcd_wrapper)
 endif()

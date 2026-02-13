@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+
+#include <nvtx3/nvtx3.hpp>
+
 #include "transfer_engine.h"
 #include "transport/transport.h"
 
@@ -86,6 +89,7 @@ void FilereadWorkerPool::workerThread() {
 
         // Execute the task if we have one
         if (task.state) {
+            nvtx3::scoped_range range{"FilereadWorkerPool::executeTask"};
             try {
                 if (!backend_) {
                     LOG(ERROR)
@@ -438,6 +442,7 @@ TransferSubmitter::TransferSubmitter(TransferEngine& engine,
 std::optional<TransferFuture> TransferSubmitter::submit(
     const Replica::Descriptor& replica, std::vector<Slice>& slices,
     TransferRequest::OpCode op_code) {
+    nvtx3::scoped_range range{"TransferSubmitter::submit"};
     std::optional<TransferFuture> future;
 
     if (replica.is_memory_replica()) {
@@ -664,6 +669,7 @@ std::optional<TransferFuture> TransferSubmitter::submitTransferEngineOperation(
 std::optional<TransferFuture> TransferSubmitter::submitFileReadOperation(
     const Replica::Descriptor& replica, std::vector<Slice>& slices,
     TransferRequest::OpCode op_code) {
+    nvtx3::scoped_range range{"TransferSubmitter::submitFileReadOperation"};
     auto state = std::make_shared<FilereadOperationState>();
     auto disk_replica = replica.get_disk_descriptor();
     std::string file_path = disk_replica.file_path;
