@@ -123,7 +123,15 @@ if (STORE_USE_ETCD)
 endif()
 
 target_compile_options(mooncake_master PRIVATE -Os)
-target_link_options(mooncake_master PRIVATE -Os -s)
+# NOTE: The original flags were "-Os -s". The -s flag strips all symbols,
+# and combined with static linking, prevents NVTX3 runtime injection from
+# working (nsys sets NVTX_INJECTION64_PATH, but the NVTX init code needs
+# dlopen() which requires a dynamically-linked binary).
+# We remove -s and add -ldl and -rdynamic so that:
+#   - dlopen/dlsym are available for NVTX injection
+#   - The dynamic symbol table is exported for the injection library
+target_link_options(mooncake_master PRIVATE -Os -rdynamic)
+target_link_libraries(mooncake_master PRIVATE dl)
 
 # Client server binary
 add_executable(mooncake_client real_client_main.cpp)
