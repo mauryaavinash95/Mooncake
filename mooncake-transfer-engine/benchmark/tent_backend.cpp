@@ -66,6 +66,14 @@ std::shared_ptr<Config> loadConfig() {
         }
     }
 
+    // MC_MERGE_REQUESTS=0 disables request merging.  When merging is on
+    // (default), contiguous 32 MB writes get coalesced into a single 8 GB
+    // io_uring_prep_write which can fail on network filesystems.
+    const char* merge_env = getenv("MC_MERGE_REQUESTS");
+    if (merge_env && std::string(merge_env) == "0") {
+        config->set("merge_requests", false);
+    }
+
     return config;
 }
 
